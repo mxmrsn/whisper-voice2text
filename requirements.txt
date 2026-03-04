@@ -1,0 +1,7 @@
+faster-whisper
+sounddevice
+numpy
+keyboard
+pyautogui
+ctranslate2==4.4.0
+scipy
