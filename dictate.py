@@ -7,6 +7,9 @@ import io
 from scipy.io.wavfile import write
 import sys
 import os
+import tkinter as tk
+from tkinter import messagebox
+import threading
 
 # CUDA/cuDNN Path Setup for Windows
 def setup_cuda_paths():
@@ -29,6 +32,9 @@ def setup_cuda_paths():
                         print(f"Error adding {bin_path}: {e}")
 
 setup_cuda_paths()
+
+root = None
+app = None
 
 # Configuration
 MODEL_SIZE = "base"
@@ -108,17 +114,126 @@ def process_recording():
     if text:
         print(f"Transcribed: {text}")
         pyautogui.write(text + " ")
+        # Add to history and clipboard
+        if app:
+            root.after(0, lambda: app.add_history_item(text))
+            root.after(0, lambda: app.copy_to_clipboard(text))
     else:
         print("No speech detected.")
 
 # Setup InputStream
 fs = 16000 # Whisper expects 16kHz
-with sd.InputStream(samplerate=fs, channels=1, callback=callback):
-    while True:
-        # Wait for the hotkey
-        if keyboard.is_pressed(HOTKEY):
-            start_recording()
-            while keyboard.is_pressed(HOTKEY):
-                sd.sleep(10)
-            stop_recording()
-        sd.sleep(50)
+
+class WhisperApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("whisper")
+        self.root.geometry("400x400")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Header
+        self.header_frame = tk.Frame(root)
+        self.header_frame.pack(fill="x", pady=5)
+        
+        self.label = tk.Label(self.header_frame, text="whisper", font=("Helvetica", 14, "bold"))
+        self.label.pack()
+        
+        self.status_label = tk.Label(self.header_frame, text="Status: Initializing...", fg="blue")
+        self.status_label.pack()
+        
+        self.info_label = tk.Label(self.header_frame, text=f"Hotkey: {HOTKEY} | Hold to record", font=("Helvetica", 9))
+        self.info_label.pack()
+
+        # History List
+        tk.Label(root, text="History:", font=("Helvetica", 10, "bold")).pack(anchor="w", padx=10)
+        
+        self.history_container = tk.Frame(root)
+        self.history_container.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self.canvas = tk.Canvas(self.history_container)
+        self.scrollbar = tk.Scrollbar(self.history_container, orient="vertical", command=self.canvas.yview)
+        self.history_frame = tk.Frame(self.canvas)
+
+        self.history_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas.create_window((0, 0), window=self.history_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        self.running = True
+        self.model_ready = False
+        self.thread = threading.Thread(target=self.hotkey_loop, daemon=True)
+        self.thread.start()
+        
+        # Check model status
+        self.root.after(100, self.check_status)
+
+    def check_status(self):
+        if hasattr(self, 'model_ready') and self.model_ready:
+            self.status_label.config(text="Status: Ready", fg="green")
+        else:
+            self.root.after(500, self.check_status)
+
+    def add_history_item(self, text):
+        item_frame = tk.Frame(self.history_frame, bd=1, relief="flat", pady=2)
+        item_frame.pack(fill="x", expand=True)
+        
+        # Truncate text for display if very long
+        display_text = (text[:60] + '...') if len(text) > 63 else text
+        text_label = tk.Label(item_frame, text=display_text, font=("Helvetica", 9), anchor="w")
+        text_label.pack(side="left", padx=5)
+        
+        copy_btn = tk.Button(item_frame, text="📋", font=("Helvetica", 8), command=lambda: self.copy_to_clipboard(text))
+        copy_btn.pack(side="right", padx=5)
+        
+        # Tooltip-like effect or highlight
+        item_frame.bind("<Enter>", lambda e: item_frame.config(bg="#f0f0f0"))
+        item_frame.bind("<Leave>", lambda e: item_frame.config(bg="SystemButtonFace"))
+
+    def copy_to_clipboard(self, text):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_label.config(text="Status: Copied to clipboard!", fg="green")
+        self.root.after(2000, lambda: self.status_label.config(text="Status: Ready", fg="green"))
+
+    def hotkey_loop(self):
+        with sd.InputStream(samplerate=fs, channels=1, callback=callback):
+            self.model_ready = True
+            while self.running:
+                if keyboard.is_pressed(HOTKEY):
+                    self.root.after(0, self.update_ui_recording)
+                    start_recording()
+                    while keyboard.is_pressed(HOTKEY) and self.running:
+                        sd.sleep(10)
+                    stop_recording()
+                    self.root.after(0, self.update_ui_ready)
+                sd.sleep(50)
+
+    def update_ui_recording(self):
+        self.root.config(bg="#ffcccc")
+        self.header_frame.config(bg="#ffcccc")
+        self.label.config(bg="#ffcccc")
+        self.status_label.config(text="Status: Recording...", fg="red", bg="#ffcccc")
+        self.info_label.config(bg="#ffcccc")
+
+    def update_ui_ready(self):
+        self.root.config(bg="SystemButtonFace")
+        self.header_frame.config(bg="SystemButtonFace")
+        self.label.config(bg="SystemButtonFace")
+        self.status_label.config(text="Status: Ready", fg="green", bg="SystemButtonFace")
+        self.info_label.config(bg="SystemButtonFace")
+
+    def on_closing(self):
+        self.running = False
+        self.root.destroy()
+        sys.exit(0)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = WhisperApp(root)
+    root.mainloop()
