@@ -10,6 +10,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 import threading
+import ctypes
 
 # CUDA/cuDNN Path Setup for Windows
 def setup_cuda_paths():
@@ -32,6 +33,13 @@ def setup_cuda_paths():
                         print(f"Error adding {bin_path}: {e}")
 
 setup_cuda_paths()
+
+def setup_taskbar_icon():
+    if sys.platform == "win32":
+        myappid = 'smoosewellington.whisper.v1' # arbitrary string
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+setup_taskbar_icon()
 
 root = None
 app = None
