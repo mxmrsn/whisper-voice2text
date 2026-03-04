@@ -1,5 +1,7 @@
 # whisper Dictation Utility
 
+![whisper UI](screenshot.png)
+
 A lightweight local dictation utility using `faster-whisper`.
 
 ## Requirements
