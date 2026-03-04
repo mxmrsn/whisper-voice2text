@@ -124,82 +124,104 @@ def process_recording():
 # Setup InputStream
 fs = 16000 # Whisper expects 16kHz
 
+# Design System (Catppuccin-inspired)
+BG_COLOR = "#1e1e2e"
+SURFACE_COLOR = "#313244"
+TEXT_COLOR = "#cdd6f4"
+ACCENT_COLOR = "#89b4fa"
+RECORD_COLOR = "#f38ba8"
+SUCCESS_COLOR = "#a6e3a1"
+FONT_MAIN = ("Segoe UI", 10)
+FONT_BOLD = ("Segoe UI", 12, "bold")
+FONT_UI = ("Segoe UI", 9)
+
 class WhisperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("whisper")
-        self.root.geometry("400x400")
+        self.root.geometry("400x500")
+        self.root.configure(bg=BG_COLOR)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Header
-        self.header_frame = tk.Frame(root)
-        self.header_frame.pack(fill="x", pady=5)
+        self.header_frame = tk.Frame(root, bg=BG_COLOR, pady=20)
+        self.header_frame.pack(fill="x")
         
-        self.label = tk.Label(self.header_frame, text="whisper", font=("Helvetica", 14, "bold"))
+        self.label = tk.Label(self.header_frame, text="whisper", font=("Segoe UI", 24, "bold"), fg=ACCENT_COLOR, bg=BG_COLOR)
         self.label.pack()
         
-        self.status_label = tk.Label(self.header_frame, text="Status: Initializing...", fg="blue")
-        self.status_label.pack()
+        self.status_label = tk.Label(self.header_frame, text="Initializing...", font=FONT_UI, fg=ACCENT_COLOR, bg=BG_COLOR)
+        self.status_label.pack(pady=5)
         
-        self.info_label = tk.Label(self.header_frame, text=f"Hotkey: {HOTKEY} | Hold to record", font=("Helvetica", 9))
+        self.info_label = tk.Label(self.header_frame, text=f"Hotkey: {HOTKEY} | Hold to record", font=FONT_UI, fg="#7f849c", bg=BG_COLOR)
         self.info_label.pack()
 
-        # History List
-        tk.Label(root, text="History:", font=("Helvetica", 10, "bold")).pack(anchor="w", padx=10)
+        # History Section
+        tk.Label(root, text="RECENT", font=("Segoe UI", 9, "bold"), fg="#585b70", bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 5))
         
-        self.history_container = tk.Frame(root)
-        self.history_container.pack(fill="both", expand=True, padx=10, pady=5)
+        self.history_container = tk.Frame(root, bg=BG_COLOR)
+        self.history_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        self.canvas = tk.Canvas(self.history_container)
+        self.canvas = tk.Canvas(self.history_container, bg=BG_COLOR, highlightthickness=0)
         self.scrollbar = tk.Scrollbar(self.history_container, orient="vertical", command=self.canvas.yview)
-        self.history_frame = tk.Frame(self.canvas)
+        self.history_frame = tk.Frame(self.canvas, bg=BG_COLOR)
 
         self.history_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        self.canvas.create_window((0, 0), window=self.history_frame, anchor="nw")
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.history_frame, anchor="nw", width=340)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        # self.scrollbar.pack(side="right", fill="y") # Hide scrollbar for cleaner look if preferred
+        
+        # Handle mousewheel
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
         
         self.running = True
         self.model_ready = False
         self.thread = threading.Thread(target=self.hotkey_loop, daemon=True)
         self.thread.start()
         
-        # Check model status
         self.root.after(100, self.check_status)
 
     def check_status(self):
         if hasattr(self, 'model_ready') and self.model_ready:
-            self.status_label.config(text="Status: Ready", fg="green")
+            self.status_label.config(text="Ready", fg=SUCCESS_COLOR)
         else:
             self.root.after(500, self.check_status)
 
     def add_history_item(self, text):
-        item_frame = tk.Frame(self.history_frame, bd=1, relief="flat", pady=2)
-        item_frame.pack(fill="x", expand=True)
+        card = tk.Frame(self.history_frame, bg=SURFACE_COLOR, padx=15, pady=12, highlightthickness=1, highlightbackground="#45475a")
+        card.pack(fill="x", pady=5)
         
-        # Truncate text for display if very long
-        display_text = (text[:60] + '...') if len(text) > 63 else text
-        text_label = tk.Label(item_frame, text=display_text, font=("Helvetica", 9), anchor="w")
-        text_label.pack(side="left", padx=5)
+        # Text area
+        display_text = (text[:120] + '...') if len(text) > 123 else text
+        msg_label = tk.Label(card, text=display_text, font=FONT_UI, fg=TEXT_COLOR, bg=SURFACE_COLOR, wraplength=250, justify="left", anchor="w")
+        msg_label.pack(side="left", fill="x", expand=True)
         
-        copy_btn = tk.Button(item_frame, text="📋", font=("Helvetica", 8), command=lambda: self.copy_to_clipboard(text))
-        copy_btn.pack(side="right", padx=5)
+        # GitHub-style copy button
+        copy_btn = tk.Button(
+            card, text="📋", font=("Segoe UI Symbol", 10), 
+            command=lambda: self.copy_to_clipboard(text),
+            bg=SURFACE_COLOR, fg=ACCENT_COLOR, activebackground=ACCENT_COLOR, 
+            activeforeground=SURFACE_COLOR, bd=0, cursor="hand2"
+        )
+        copy_btn.pack(side="right", padx=(10, 0))
         
-        # Tooltip-like effect or highlight
-        item_frame.bind("<Enter>", lambda e: item_frame.config(bg="#f0f0f0"))
-        item_frame.bind("<Leave>", lambda e: item_frame.config(bg="SystemButtonFace"))
+        # Hover效果
+        card.bind("<Enter>", lambda e: card.config(highlightbackground=ACCENT_COLOR))
+        card.bind("<Leave>", lambda e: card.config(highlightbackground="#45475a"))
 
     def copy_to_clipboard(self, text):
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        self.status_label.config(text="Status: Copied to clipboard!", fg="green")
-        self.root.after(2000, lambda: self.status_label.config(text="Status: Ready", fg="green"))
+        old_status = self.status_label.cget("text")
+        old_fg = self.status_label.cget("fg")
+        self.status_label.config(text="Copied!", fg=SUCCESS_COLOR)
+        self.root.after(1500, lambda: self.status_label.config(text=old_status, fg=old_fg))
 
     def hotkey_loop(self):
         with sd.InputStream(samplerate=fs, channels=1, callback=callback):
@@ -215,18 +237,26 @@ class WhisperApp:
                 sd.sleep(50)
 
     def update_ui_recording(self):
-        self.root.config(bg="#ffcccc")
-        self.header_frame.config(bg="#ffcccc")
-        self.label.config(bg="#ffcccc")
-        self.status_label.config(text="Status: Recording...", fg="red", bg="#ffcccc")
-        self.info_label.config(bg="#ffcccc")
+        self.animate_bg(RECORD_COLOR)
+        self.status_label.config(text="Recording...", fg=BG_COLOR)
+        self.label.config(fg=BG_COLOR)
+        self.info_label.config(fg=BG_COLOR)
 
     def update_ui_ready(self):
-        self.root.config(bg="SystemButtonFace")
-        self.header_frame.config(bg="SystemButtonFace")
-        self.label.config(bg="SystemButtonFace")
-        self.status_label.config(text="Status: Ready", fg="green", bg="SystemButtonFace")
-        self.info_label.config(bg="SystemButtonFace")
+        self.animate_bg(BG_COLOR)
+        self.status_label.config(text="Ready", fg=SUCCESS_COLOR)
+        self.label.config(fg=ACCENT_COLOR)
+        self.info_label.config(fg="#7f849c")
+
+    def animate_bg(self, color):
+        self.root.config(bg=color)
+        self.header_frame.config(bg=color)
+        self.label.config(bg=color)
+        self.status_label.config(bg=color)
+        self.info_label.config(bg=color)
+        self.history_container.config(bg=color)
+        self.canvas.config(bg=color)
+        self.history_frame.config(bg=color)
 
     def on_closing(self):
         self.running = False
