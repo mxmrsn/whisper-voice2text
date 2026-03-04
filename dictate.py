@@ -132,6 +132,13 @@ class WhisperApp:
         self.root.configure(bg=BG_COLOR)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Window Icon
+        try:
+            icon_img = tk.PhotoImage(file="icon.png")
+            self.root.iconphoto(True, icon_img)
+        except Exception as e:
+            print(f"Could not load window icon: {e}")
+        
         # Styles
         style = ttk.Style()
         style.theme_use('default')
@@ -183,6 +190,10 @@ class WhisperApp:
         
         # Handle mousewheel
         self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        
+        # Footer branding
+        self.footer = tk.Label(root, text="by smoosewellington", font=("Segoe UI", 8, "italic"), fg="#45475a", bg=BG_COLOR)
+        self.footer.pack(side="bottom", pady=5)
         
         self.running = True
         self.model_ready = False

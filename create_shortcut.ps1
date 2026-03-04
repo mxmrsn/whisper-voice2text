@@ -14,6 +14,7 @@ $Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $PythonExe
 $Shortcut.Arguments = "`"$ScriptPath`""
 $Shortcut.WorkingDirectory = $CurrentDir.Path
+$Shortcut.IconLocation = "$CurrentDir\icon.ico"
 $Shortcut.Description = "whisper Voice-to-Text Dictation"
 $Shortcut.Save()
 
