@@ -28,6 +28,6 @@ The shortcut will be created in the `build/` folder as `whisper.lnk`.
 
 ## Configuration
 You can edit `dictate.py` to change:
-- `MODEL_SIZE`: "tiny", "base", "small", "medium", "large-v3" (default is "base")
+- `MODEL_SIZE`: "tiny", "base", "small", "medium", "large-v3" (default is "large-v3")
 - `HOTKEY`: Change the activation keys.
 - `DEVICE`: "cuda" or "cpu"

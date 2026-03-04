@@ -8,7 +8,7 @@ from scipy.io.wavfile import write
 import sys
 import os
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import threading
 
 # CUDA/cuDNN Path Setup for Windows
@@ -35,9 +35,10 @@ setup_cuda_paths()
 
 root = None
 app = None
+model = None
 
 # Configuration
-MODEL_SIZE = "base"
+MODEL_SIZE = "large-v3"
 DEVICE = "cuda" 
 COMPUTE_TYPE = "float16" # float16 is faster on GPU
 HOTKEY = "ctrl+alt"
@@ -52,19 +53,7 @@ def load_model():
         print("Falling back to CPU for reliable transcription...")
         return WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
 
-model = load_model()
-
-# Test the model immediately to catch DLL errors before starting the main loop
-print("Testing model with silent audio...")
-try:
-    # Transcribe 1 second of silence
-    model.transcribe(np.zeros(16000, dtype=np.float32))
-    print("Model test successful!")
-except Exception as e:
-    print(f"Model test failed: {e}")
-    if "cudnn" in str(e).lower() or "cuda" in str(e).lower():
-        print("Switching to CPU due to late-loading library error...")
-        model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+# Model will be loaded asynchronously in the App
 
 print(f"Ready! Press and hold '{HOTKEY}' to record. Release to transcribe and type.")
 
@@ -139,9 +128,20 @@ class WhisperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("whisper")
-        self.root.geometry("400x500")
+        self.root.geometry("400x550")
         self.root.configure(bg=BG_COLOR)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Styles
+        style = ttk.Style()
+        style.theme_use('default')
+        style.configure("TProgressbar", 
+                        thickness=10,
+                        troughcolor=BG_COLOR, 
+                        background=ACCENT_COLOR, 
+                        bordercolor=BG_COLOR, 
+                        lightcolor=ACCENT_COLOR, 
+                        darkcolor=ACCENT_COLOR)
         
         # Header
         self.header_frame = tk.Frame(root, bg=BG_COLOR, pady=20)
@@ -150,11 +150,16 @@ class WhisperApp:
         self.label = tk.Label(self.header_frame, text="whisper", font=("Segoe UI", 24, "bold"), fg=ACCENT_COLOR, bg=BG_COLOR)
         self.label.pack()
         
-        self.status_label = tk.Label(self.header_frame, text="Initializing...", font=FONT_UI, fg=ACCENT_COLOR, bg=BG_COLOR)
-        self.status_label.pack(pady=5)
+        self.status_label = tk.Label(self.header_frame, text="Preparing...", font=FONT_UI, fg=ACCENT_COLOR, bg=BG_COLOR)
+        self.status_label.pack(pady=(5, 10))
+        
+        # Progress Bar
+        self.progress = ttk.Progressbar(self.header_frame, style="TProgressbar", orient="horizontal", length=300, mode="indeterminate")
+        self.progress.pack(pady=5)
+        self.progress.start(10)
         
         self.info_label = tk.Label(self.header_frame, text=f"Hotkey: {HOTKEY} | Hold to record", font=FONT_UI, fg="#7f849c", bg=BG_COLOR)
-        self.info_label.pack()
+        self.info_label.pack(pady=10)
 
         # History Section
         tk.Label(root, text="RECENT", font=("Segoe UI", 9, "bold"), fg="#585b70", bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 5))
@@ -175,23 +180,48 @@ class WhisperApp:
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
         self.canvas.pack(side="left", fill="both", expand=True)
-        # self.scrollbar.pack(side="right", fill="y") # Hide scrollbar for cleaner look if preferred
         
         # Handle mousewheel
         self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
         
         self.running = True
         self.model_ready = False
-        self.thread = threading.Thread(target=self.hotkey_loop, daemon=True)
-        self.thread.start()
         
-        self.root.after(100, self.check_status)
+        # Start background model loading
+        self.load_thread = threading.Thread(target=self.async_load_model, daemon=True)
+        self.load_thread.start()
+        
+        # Start hotkey thread (will wait for model_ready)
+        self.hotkey_thread = threading.Thread(target=self.hotkey_loop, daemon=True)
+        self.hotkey_thread.start()
 
-    def check_status(self):
-        if hasattr(self, 'model_ready') and self.model_ready:
-            self.status_label.config(text="Ready", fg=SUCCESS_COLOR)
-        else:
-            self.root.after(500, self.check_status)
+    def async_load_model(self):
+        global model
+        self.root.after(0, lambda: self.status_label.config(text=f"Loading {MODEL_SIZE} model..."))
+        
+        try:
+            model = load_model()
+            
+            # Test the model
+            self.root.after(0, lambda: self.status_label.config(text="Testing model..."))
+            try:
+                model.transcribe(np.zeros(16000, dtype=np.float32))
+            except Exception as e:
+                if "cudnn" in str(e).lower() or "cuda" in str(e).lower():
+                    self.root.after(0, lambda: self.status_label.config(text="CUDA Error, falling back to CPU...", fg=RECORD_COLOR))
+                    model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+            
+            self.model_ready = True
+            self.root.after(0, self.on_model_loaded)
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.status_label.config(text=f"Error: {str(e)[:40]}...", fg=RECORD_COLOR))
+            self.root.after(0, lambda: self.progress.stop())
+
+    def on_model_loaded(self):
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.status_label.config(text="Ready", fg=SUCCESS_COLOR)
 
     def add_history_item(self, text):
         card = tk.Frame(self.history_frame, bg=SURFACE_COLOR, padx=15, pady=12, highlightthickness=1, highlightbackground="#45475a")
@@ -224,8 +254,11 @@ class WhisperApp:
         self.root.after(1500, lambda: self.status_label.config(text=old_status, fg=old_fg))
 
     def hotkey_loop(self):
+        # Wait for model to load
+        while not self.model_ready and self.running:
+            sd.sleep(100)
+            
         with sd.InputStream(samplerate=fs, channels=1, callback=callback):
-            self.model_ready = True
             while self.running:
                 if keyboard.is_pressed(HOTKEY):
                     self.root.after(0, self.update_ui_recording)
