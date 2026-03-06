@@ -12,6 +12,15 @@ from tkinter import messagebox, ttk
 import threading
 import ctypes
 
+def get_resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 # CUDA/cuDNN Path Setup for Windows
 def setup_cuda_paths():
     if sys.platform == "win32":
@@ -142,10 +151,11 @@ class WhisperApp:
         
         # Window Icon
         try:
-            icon_img = tk.PhotoImage(file="icon.png")
+            icon_path = get_resource_path("icon.png")
+            icon_img = tk.PhotoImage(file=icon_path)
             self.root.iconphoto(True, icon_img)
         except Exception as e:
-            print(f"Could not load window icon: {e}")
+            print(f"Could not load window icon from {icon_path if 'icon_path' in locals() else 'unknown'}: {e}")
         
         # Styles
         style = ttk.Style()
