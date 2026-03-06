@@ -24,22 +24,35 @@ def get_resource_path(relative_path):
 # CUDA/cuDNN Path Setup for Windows
 def setup_cuda_paths():
     if sys.platform == "win32":
-        # Get the path to the current virtual environment's site-packages
-        venv_base = os.path.dirname(os.path.dirname(sys.executable))
-        site_packages = os.path.join(venv_base, "Lib", "site-packages")
-        nvidia_base = os.path.join(site_packages, "nvidia")
-        
-        if os.path.exists(nvidia_base):
-            # Check for various nvidia library subfolders
-            for lib in ["cudnn", "cublas"]:
-                bin_path = os.path.join(nvidia_base, lib, "bin")
-                if os.path.exists(bin_path):
-                    print(f"Adding {bin_path} to DLL search path...")
-                    os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
-                    try:
-                        os.add_dll_directory(bin_path)
-                    except Exception as e:
-                        print(f"Error adding {bin_path}: {e}")
+        # Check if we are running as a bundled EXE
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # In PyInstaller, DLLs should be in _MEIPASS or _MEIPASS/nvidia
+            search_paths = [
+                sys._MEIPASS,
+                os.path.join(sys._MEIPASS, "nvidia", "cudnn", "bin"),
+                os.path.join(sys._MEIPASS, "nvidia", "cublas", "bin"),
+                get_resource_path("nvidia") # recursive check if nested
+            ]
+        else:
+            # Development mode (venv)
+            venv_base = os.path.dirname(os.path.dirname(sys.executable))
+            site_packages = os.path.join(venv_base, "Lib", "site-packages")
+            nvidia_base = os.path.join(site_packages, "nvidia")
+            search_paths = []
+            if os.path.exists(nvidia_base):
+                for lib in ["cudnn", "cublas"]:
+                    bin_path = os.path.join(nvidia_base, lib, "bin")
+                    if os.path.exists(bin_path):
+                        search_paths.append(bin_path)
+
+        for bin_path in search_paths:
+            if os.path.exists(bin_path):
+                print(f"Adding {bin_path} to DLL search path...")
+                os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+                try:
+                    os.add_dll_directory(bin_path)
+                except Exception as e:
+                    print(f"Error adding {bin_path}: {e}")
 
 setup_cuda_paths()
 
@@ -326,6 +339,17 @@ class WhisperApp:
         sys.exit(0)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = WhisperApp(root)
-    root.mainloop()
+    try:
+        import traceback
+        root = tk.Tk()
+        app = WhisperApp(root)
+        root.mainloop()
+    except Exception as e:
+        # Simple crash reporter for the sharing with friends
+        import tkinter.messagebox as mb
+        error_msg = f"Application crashed unexpectedly:\n\n{str(e)}\n\n{traceback.format_exc()}"
+        print(error_msg)
+        # Ensure a root exists to show message box
+        temp_root = tk.Tk()
+        temp_root.withdraw()
+        mb.showerror("whisper Error", error_msg)
